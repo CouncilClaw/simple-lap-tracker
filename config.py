@@ -7,18 +7,30 @@ Supports environment variables and config files.
 
 import os
 from pathlib import Path
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Dict, Optional
 
 # ── Server Configuration ────────────────────────────────────────────────────
 
+def _get_ws_host():
+    return os.getenv("DEVMESH_WS_HOST", "127.0.0.1")
+
+def _get_ws_port():
+    return int(os.getenv("DEVMESH_WS_PORT", "7700"))
+
+def _get_dashboard_port():
+    return int(os.getenv("DEVMESH_DASHBOARD_PORT", "7702"))
+
+def _get_http_port():
+    return int(os.getenv("DEVMESH_HTTP_PORT", "7701"))
+
 @dataclass
 class ServerConfig:
     """Server runtime configuration."""
-    ws_host: str = os.getenv("DEVMESH_WS_HOST", "127.0.0.1")
-    ws_port: int = int(os.getenv("DEVMESH_WS_PORT", "7700"))
-    dashboard_port: int = int(os.getenv("DEVMESH_DASHBOARD_PORT", "7702"))
-    http_port: int = int(os.getenv("DEVMESH_HTTP_PORT", "7701"))
+    ws_host: str = field(default_factory=_get_ws_host)
+    ws_port: int = field(default_factory=_get_ws_port)
+    dashboard_port: int = field(default_factory=_get_dashboard_port)
+    http_port: int = field(default_factory=_get_http_port)
     
     # Timeouts and thresholds
     lock_ttl_sec: int = int(os.getenv("DEVMESH_LOCK_TTL_SEC", "15"))
@@ -100,7 +112,7 @@ KNOWN_CLI_TOOLS: list[Dict] = [
     {"name": "aider",    "cmd": "aider",    "label": "Aider",            "color": "#7C3AED"},
     {"name": "continue", "cmd": "continue", "label": "Continue",         "color": "#06B6D4"},
     {"name": "cody",     "cmd": "cody",     "label": "Sourcegraph Cody", "color": "#FF5543"},
-    {"name": "cursor",   "cmd": "agent",    "label": "Cursor",           "color": "#0EA5E9"},
+    {"name": "cursor",   "cmd": "cursor",   "label": "Cursor",           "color": "#0EA5E9"},
     {"name": "ollama",   "cmd": "ollama",   "label": "Ollama",           "color": "#F97316"},
     {"name": "sgpt",     "cmd": "sgpt",     "label": "ShellGPT",         "color": "#8B5CF6"},
     {"name": "gh",       "cmd": "gh",       "label": "GitHub Copilot",   "color": "#238636"},
@@ -124,7 +136,7 @@ TOOL_PROFILES: Dict = {
         # Availability varies by account/project/quota. Override with DEVMESH_GEMINI_MODEL env var.
         "cmd": [
             "gemini",
-            "--model", "gemini 3",
+            "--model", "gemini-2.0-flash",
             "--approval-mode", "yolo",
             "--prompt", "{prompt}",
             "--output-format", "text",
@@ -163,6 +175,15 @@ TOOL_PROFILES: Dict = {
                          "specializations": ["refactoring","debugging"]},
         "resources": {"vram_gb": 0, "ram_gb": 3},
     },
+    "continue": {
+        "label": "Continue",
+        "color": "#06B6D4",
+        "invoke_mode": "arg",
+        "cmd": ["continue", "dev"],
+        "capabilities": {"languages": ["python","javascript","typescript","rust","go"],
+                         "specializations": ["autocomplete","refactoring"]},
+        "resources": {"vram_gb": 0, "ram_gb": 2},
+    },
     "ollama": {
         "label": "Ollama",
         "color": "#F97316",
@@ -193,28 +214,11 @@ TOOL_PROFILES: Dict = {
     "cursor": {
         "label": "Cursor",
         "color": "#0EA5E9",
-        "invoke_mode": "arg",
-        "cmd": [
-            "agent",
-            "-f",
-            "--print",
-            "--model", "auto",
-            "--approve-mcps",
-            "--workspace", "{working_dir}",
-            "{prompt}",
-        ],
-        "capabilities": {"languages": ["python","javascript","typescript"],
-                         "specializations": ["editor","autocomplete"]},
-        "resources": {"vram_gb": 0, "ram_gb": 4},
-    },
-    "continue": {
-        "label": "Continue",
-        "color": "#06B6D4",
         "invoke_mode": "note",
         "cmd": [],
         "capabilities": {"languages": ["python","javascript","typescript"],
                          "specializations": ["editor","autocomplete"]},
-        "resources": {"vram_gb": 0, "ram_gb": 3},
+        "resources": {"vram_gb": 0, "ram_gb": 4},
     },
     "gh": {
         "label": "GitHub Copilot",

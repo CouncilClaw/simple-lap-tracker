@@ -71,12 +71,12 @@ header{
 .tr{
   background:var(--surf);border:1px solid var(--bdr);border-radius:6px;
   padding:9px 13px;display:grid;
-  grid-template-columns:1fr 86px;align-items:center;gap:10px;
+  grid-template-columns:62px 1fr 72px 86px;align-items:center;gap:10px;
   transition:border-color .2s;
 }
 .tr:hover{border-color:var(--bdr2)}
-.tid{font-family:var(--fc);font-weight:700;font-size:9px;color:var(--mu)}
-.tdesc{font-size:11.5px;color:var(--tx);margin-bottom:2px}
+.tid{font-family:var(--fm);font-weight:700;font-size:10px;color:var(--mu)}
+.tdesc{font-size:11.5px;color:var(--tx)}
 .tfile{font-size:9.5px;color:var(--mu);word-break:break-all}
 .ts{font-size:9.5px;padding:2px 7px;border-radius:4px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;text-align:center}
 .ts-queued{background:rgba(72,90,112,.2);color:var(--mu)}
@@ -86,15 +86,8 @@ header{
 .ts-paused{background:rgba(170,120,255,.14);color:var(--tx)}
 .ts-completed{background:rgba(58,240,160,.14);color:var(--gr)}
 .ts-failed,.ts-abandoned{background:rgba(240,64,90,.14);color:var(--re)}
-.town{font-size:9px;color:var(--mu);margin-top:4px}
+.town{font-size:9.5px;color:var(--mu);text-align:right}
 .empty{text-align:center;color:var(--mu);padding:38px 0;font-style:italic;font-size:12px}
-
-/* COMPLETED TASKS SIDEBAR */
-.cti{padding:8px 10px;border-bottom:1px solid var(--bdr);font-size:10.5px}
-.cti-h{display:flex;justify-content:space-between;margin-bottom:3px}
-.cti-id{color:var(--mu);font-size:9px}
-.cti-t{color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.cti-m{color:var(--mu);font-size:9px}
 /* CHAT */
 .chat{border-top:1px solid var(--bdr);background:var(--surf);padding:13px 15px}
 .chat-t{font-family:var(--fm);font-size:9.5px;font-weight:600;letter-spacing:1.6px;text-transform:uppercase;color:var(--mu);margin-bottom:9px}
@@ -241,6 +234,10 @@ header{
 
 <div id="cp">
   <div id="task-list"><div class="empty">No tasks yet — send one from the command center below.</div></div>
+  <div id="task-graph-wrap" style="margin-top:12px;border-top:1px solid var(--bdr);padding-top:12px">
+    <div class="sec-t" style="font-size:10px;margin-bottom:6px;color:var(--mu)">Task Graph</div>
+    <svg id="task-graph" width="100%" height="140"></svg>
+  </div>
   <div class="chat">
     <div class="chat-t">▸ Task Command Center — broadcasts to all agents</div>
     <div class="msgs" id="msgs"></div>
@@ -263,12 +260,8 @@ header{
 
 <div id="rp">
   <div class="rh">Knowledge Base (RAG)</div>
-  <div id="kl" style="padding:10px;font-size:10px;max-height:200px;overflow-y:auto;border-bottom:1px solid var(--bdr)">
+  <div id="kl" style="padding:10px;font-size:10px;max-height:300px;overflow-y:auto;border-bottom:1px solid var(--bdr)">
     <div style="color:var(--mu);font-style:italic">No discoveries shared yet…</div>
-  </div>
-  <div class="rh">Completed Tasks</div>
-  <div id="ctl" style="flex:1;overflow-y:auto;border-bottom:1px solid var(--bdr)">
-    <div style="padding:15px;color:var(--mu);font-style:italic;font-size:11px;text-align:center">No completed tasks.</div>
   </div>
   <div class="rh">Live Events <span class="badge" id="ec">0</span></div>
   <div style="margin-top:6px;font-size:9px;color:var(--mu);display:flex;align-items:center;gap:8px">
@@ -280,6 +273,7 @@ header{
   <div id="el"></div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
 <script>
 const WS='ws://127.0.0.1:7702';
 let ws=null,S={agents:{},tasks:{},locks:{},hardware:{},hardware_history:[],detected_tools:[],chat_log:[],event_log:[]};
@@ -329,7 +323,7 @@ function dispatch(m){
   }
 }
 
-function render(){renderAgents();renderTasks();renderTools();renderHW();renderHWHistory();renderContext();stats();}
+function render(){renderAgents();renderTasks();renderTools();renderHW();renderHWHistory();renderTaskGraph();renderContext();stats();}
 
 function stats(){
   document.getElementById('sa').textContent=Object.values(S.agents).filter(a=>a.is_active).length;
@@ -380,41 +374,101 @@ function renderContext(){
 }
 
 function renderTasks(){
-  const activeEl=document.getElementById('task-list');
-  const completedEl=document.getElementById('ctl');
-  const allTasks=Object.values(S.tasks||{});
-  
-  const activeTasks = allTasks.filter(t => t.status !== 'completed').sort((a,b)=>a.created_at-b.created_at);
-  const completedTasks = allTasks.filter(t => t.status === 'completed').sort((a,b)=>new Date(b.completed_at||0)-new Date(a.completed_at||0));
+  const el=document.getElementById('task-list'),ts=Object.values(S.tasks);
+  if(!ts.length){el.innerHTML='<div class="empty">No tasks yet — send one from the command center below.</div>';return;}
+  el.innerHTML=ts.sort((a,b)=>a.created_at-b.created_at).map(t=>`
+    <div class="tr">
+      <div><div class="tid">${t.task_id}</div><div style="font-size:9px;color:var(--mu)">${t.operation}</div></div>
+      <div><div class="tdesc">${t.description}</div><div class="tfile">${t.file||''}</div>${t.depends_on?.length?`<div style="font-size:9px;color:var(--mu)">deps: ${t.depends_on.join(', ')}</div>`:''}</div>
+      <div class="ts ts-${t.status}">${t.status}</div>
+      <div class="town">${t.owner_model||'—'}</div>
+    </div>`).join('');
+  el.scrollTop=el.scrollHeight;
+}
 
-  if(!activeTasks.length){
-    activeEl.innerHTML='<div class="empty">No active tasks — send one from the command center below.</div>';
-  } else {
-    activeEl.innerHTML=activeTasks.map(t=>`
-      <div class="tr">
-        <div>
-          <div class="tid">${t.task_id} · ${t.operation}</div>
-          <div class="tdesc">${t.description}</div>
-          <div class="tfile">${t.file||''}</div>
-          ${t.depends_on?.length?`<div style="font-size:8px;color:var(--mu)">deps: ${t.depends_on.join(', ')}</div>`:''}
-          <div class="town">${t.owner_model?`By ${t.owner_model}`:'Unclaimed'}</div>
-        </div>
-        <div class="ts ts-${t.status}">${t.status}</div>
-      </div>`).join('');
-  }
+function renderTaskGraph(){
+  const svg=document.getElementById('task-graph');
+  if(!svg || !window.d3) return;
+  const tasks=Object.values(S.tasks||{});
+  const w=svg.clientWidth||600;
+  const h=140;
+  svg.setAttribute('width',w);
+  svg.setAttribute('height',h);
+  while(svg.firstChild) svg.removeChild(svg.firstChild);
+  if(!tasks.length) return;
 
-  if(!completedTasks.length){
-    completedEl.innerHTML='<div style="padding:15px;color:var(--mu);font-style:italic;font-size:11px;text-align:center">No completed tasks.</div>';
-  } else {
-    completedEl.innerHTML=completedTasks.map(t=>`
-      <div class="cti">
-        <div class="cti-h">
-          <div class="cti-id">${t.task_id}</div>
-          <div class="cti-m">${t.owner_model||''}</div>
-        </div>
-        <div class="cti-t">${t.description}</div>
-      </div>`).join('');
-  }
+  const nodeMap=new Set(tasks.map(t=>t.task_id));
+  const nodes=tasks.map(t=>({
+    id:t.task_id,
+    label:t.task_id,
+    status:t.status||'queued',
+    depends_on:t.depends_on||[],
+  }));
+
+  const links=[];
+  tasks.forEach(t=>{
+    (t.depends_on||[]).forEach(dep=>{
+      if(nodeMap.has(dep)) links.push({source:dep, target:t.task_id});
+    });
+  });
+
+  const colorOf=(st)=>{
+    const s=(st||'').toString();
+    if(s.includes('completed')) return 'rgb(64,200,120)';
+    if(s.includes('working')) return 'rgb(255,200,80)';
+    if(s.includes('paused')) return 'rgb(170,120,255)';
+    if(s.includes('abandoned') || s.includes('failed')) return 'rgb(190,190,190)';
+    return 'rgb(90,150,220)';
+  };
+
+  const d3svg=d3.select(svg);
+  const g=d3svg.append('g');
+
+  const link=g.selectAll('line')
+    .data(links)
+    .enter().append('line')
+    .attr('stroke','rgba(180,180,220,.35)')
+    .attr('stroke-width',1);
+
+  const node=g.selectAll('g')
+    .data(nodes)
+    .enter().append('g')
+    .call(d3.drag()
+      .on('start', (event)=>{ if(!event.active) sim.alphaTarget(0.3).restart(); })
+      .on('drag', (event)=>{ event.subject.fx=event.x; event.subject.fy=event.y; })
+      .on('end', (event)=>{ if(!event.active) sim.alphaTarget(0); event.subject.fx=null; event.subject.fy=null; })
+    );
+
+  const r=18;
+  node.append('circle')
+    .attr('r',r/2)
+    .attr('fill',d=>colorOf(d.status))
+    .attr('stroke','rgba(0,0,0,.25)');
+
+  node.append('text')
+    .text(d=>String(d.id).slice(0,10))
+    .attr('text-anchor','middle')
+    .attr('dy','0.35em')
+    .style('font-size','10px')
+    .style('fill','rgba(10,10,10,.8)');
+
+  const sim=d3.forceSimulation(nodes)
+    .force('link', d3.forceLink(links).id(d=>d.id).distance(70).strength(0.6))
+    .force('charge', d3.forceManyBody().strength(-220))
+    .force('center', d3.forceCenter(w/2, h/2))
+    .force('collide', d3.forceCollide().radius(22))
+    .stop();
+
+  sim.on('tick', ()=>{
+    link
+      .attr('x1',d=>d.source.x).attr('y1',d=>d.source.y)
+      .attr('x2',d=>d.target.x).attr('y2',d=>d.target.y);
+    node.attr('transform',d=>`translate(${d.x},${d.y})`);
+  });
+
+  // Run a short simulation burst to settle layout.
+  sim.alpha(1).restart();
+  setTimeout(()=>sim.stop(), 600);
 }
 
 function renderTools(){

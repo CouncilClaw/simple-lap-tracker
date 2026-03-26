@@ -259,18 +259,14 @@ class DevMeshServer:
                 log.error(f"Migration failed: {e}")
 
     def _reset_stale_agents(self):
-        """On fresh start, mark all persisted agents as inactive and clear non-completed tasks."""
+        """On fresh start, mark all persisted agents as inactive so they don't appear as connected."""
         try:
             conn = self.storage._get_conn()
-            # Mark agents offline
             conn.execute("UPDATE agents SET is_active = 0, status = 'offline'")
-            # Clear tasks that weren't completed (they are stale)
-            # We keep COMPLETED tasks for the 'recent tasks' sidebar
-            conn.execute("DELETE FROM tasks WHERE status != 'completed'")
             conn.commit()
-            log.info("Reset all stale agents and cleared incomplete tasks on startup.")
+            log.info("Reset all stale agents to inactive on startup.")
         except Exception as e:
-            log.warning(f"Failed to reset stale state: {e}")
+            log.warning(f"Failed to reset stale agents: {e}")
 
     # ── Internal helpers ──────────────────────────────────────────────────
 
@@ -419,8 +415,8 @@ class DevMeshServer:
         # Filter to only include active agents (is_active: 1)
         active_agents = {k: v for k, v in agent_map.items() if v.get("is_active") == 1}
 
-        # Get all tasks from storage (active and completed)
-        db_tasks = self.storage.get_recent_tasks(200)
+        # Get recent tasks from storage
+        db_tasks = self.storage.get_recent_tasks(100)
         task_map = {t["task_id"]: t for t in db_tasks}
         # Overlay in-memory tasks (for very recent/pending ones)
         for tid, info in self.tasks.items():
